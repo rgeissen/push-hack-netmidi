@@ -54,8 +54,13 @@ Live's own Sync setting for the Net MIDI output.
 
 Messages from the iPad carry the time they were sent, and the Push plays
 them at that time plus a **buffer** (10 ms by default; the web page sets
-it). The buffer absorbs Wi-Fi's jitter: raise it if notes stutter or the
-page counts many late packets, lower it on a wired link. For tempo, use
+it). The page shows how far behind their time packets arrive: set the
+buffer above that and the timing is steady, with everything from the
+iPad that many milliseconds late (a negative Track Delay on the receiving
+track in Live pulls it back). On a good Wi-Fi 20 to 30 ms is typical; a
+wired link needs much less. The clock offset comes from the clock sync
+with the shortest round trip of the last minutes, so one slow exchange
+does not move every note. For tempo, use
 Ableton Link (AUM and Live on the Push both have it), not MIDI clock. Live sends
 clock to Net MIDI only with **Sync** on for that port (Settings, MIDI).
 

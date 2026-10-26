@@ -10,7 +10,9 @@
   Push does); remembered peers; a web page; a NETMIDI tab on the Push.
 - Messages from the network play at the time the sender stamped them,
   plus a buffer (10 ms, set on the page); late and lost packets are
-  counted. Before this, a short note whose on and off shared a packet had
+  counted, and the page shows how far behind their time packets come,
+  so the buffer can be set to a number. The clock offset follows the
+  sync with the shortest round trip. Before this, a short note whose on and off shared a packet had
   no length, and Wi-Fi's jitter landed on every note.
 - Clock and transport from the network stay out unless Clock in is on:
   AUM's clock made Live on the Push follow it.

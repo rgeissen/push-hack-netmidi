@@ -71,6 +71,7 @@ type State struct {
 	LatencyMs  int          `json:"latency_ms"` // the buffer messages from the network wait in
 	ClockIn    bool         `json:"clock_in"`   // clock and transport from the network reach Live
 	Late       uint64       `json:"late"`       // packets that came after their time plus the buffer
+	BehindMs   float64      `json:"behind_ms"`  // how far behind their stamp packets came, at most, lately
 	Pending    int          `json:"pending"`    // messages waiting for their time
 	Peers      []PeerView   `json:"peers"`
 	Found      []Found      `json:"found"`
@@ -98,6 +99,7 @@ type App struct {
 	offArmed time.Time // when OFF was pressed once on the tab
 	sched    *sched
 	late     atomic.Uint64
+	behind   behind
 	done     chan struct{}
 }
 
@@ -245,6 +247,7 @@ func (a *App) schedule(ev rtpmidi.Event) {
 		return
 	}
 	now := time.Now()
+	a.behind.note(now.Sub(ev.At[0]), now)
 	var shift time.Duration
 	if first := ev.At[0].Add(lat); first.Before(now) {
 		shift = now.Sub(first)
@@ -279,6 +282,36 @@ func keepClock(msgs [][]byte, clockIn bool) [][]byte {
 		}
 	}
 	return out
+}
+
+// behind keeps the largest lag of the packets of the last 10 to 20 s: how
+// far behind their stamp they came. The buffer wants to be above it.
+type behind struct {
+	mu        sync.Mutex
+	cur, prev time.Duration
+	since     time.Time
+}
+
+const behindWindow = 10 * time.Second
+
+func (b *behind) note(lag time.Duration, now time.Time) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if now.Sub(b.since) > behindWindow {
+		b.prev, b.cur, b.since = b.cur, 0, now
+	}
+	if lag > b.cur {
+		b.cur = lag
+	}
+}
+
+func (b *behind) max(now time.Time) time.Duration {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if now.Sub(b.since) > 2*behindWindow {
+		return 0
+	}
+	return max(b.cur, b.prev)
 }
 
 func (a *App) fromNet(msgs [][]byte) {
@@ -564,6 +597,7 @@ func (a *App) State() State {
 	s := State{Version: a.version, Name: a.cfg.Name, Port: a.cfg.Port, Enabled: a.cfg.Enabled,
 		Error: a.errText, Alsa: a.br != nil, OwnPort: ownPortName, LatencyMs: a.cfg.LatencyMs, ClockIn: a.cfg.ClockIn,
 		Late: a.late.Load(), Pending: a.sched.pending(),
+		BehindMs:   float64(a.behind.max(time.Now()).Microseconds()) / 1000,
 		Remembered: append([]Remembered{}, a.cfg.Peers...), Monitor: append([]MonLine{}, a.monitor...)}
 	if a.av != nil {
 		s.Announced = a.av.Published()

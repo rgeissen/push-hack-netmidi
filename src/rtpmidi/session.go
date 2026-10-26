@@ -88,6 +88,47 @@ type Peer struct {
 	lastSeq   uint16
 	haveSeq   bool
 	parser    ListParser
+	syncs     []syncSample // the last clock syncs, for the steadiest offset
+}
+
+// syncSample is one clock sync: the round trip it measured and the offset
+// it gave. The offset is only as good as the round trip was short.
+type syncSample struct {
+	rtt    uint64 // 100 us units
+	offset int64
+	at     time.Time
+}
+
+// Timing of the offset: a sync older than this is forgotten (the clocks
+// drift), and up to syncKeep are kept.
+const (
+	syncKeep = 32
+	syncFor  = 2 * time.Minute
+)
+
+// adopt takes one clock sync. Latency shows the latest round trip (so
+// jitter is visible); Offset comes from the shortest round trip of the
+// last minutes, the newest among equals, since a sample with a long trip
+// may have waited anywhere along the way.
+func (p *Peer) adopt(rtt uint64, offset int64, now time.Time) {
+	p.Latency = time.Duration(rtt) * 100 * time.Microsecond / 2
+	p.syncs = append(p.syncs, syncSample{rtt, offset, now})
+	if len(p.syncs) > syncKeep {
+		p.syncs = p.syncs[1:]
+	}
+	best := -1
+	for i, s := range p.syncs {
+		if now.Sub(s.at) > syncFor {
+			continue
+		}
+		if best < 0 || s.rtt <= p.syncs[best].rtt {
+			best = i
+		}
+	}
+	if best >= 0 {
+		p.Offset = p.syncs[best].offset
+	}
+	p.Synced = true
 }
 
 // Timing. Apple's implementation invites about once a second a dozen
@@ -331,14 +372,10 @@ func (e *Endpoint) receiveClock(from netip.AddrPort, m Clock, now time.Time) ([]
 		return []Out{{PortData, from, m.Marshal()}}, nil
 	case 1:
 		m.Count, m.SSRC, m.TS[2] = 2, e.SSRC, t
-		p.Latency = time.Duration(t-m.TS[0]) * 100 * time.Microsecond / 2
-		p.Offset = int64(m.TS[1]) - int64(m.TS[0]+t)/2
-		p.Synced = true
+		p.adopt(t-m.TS[0], int64(m.TS[1])-int64(m.TS[0]+t)/2, now)
 		return []Out{{PortData, from, m.Marshal()}}, nil
 	case 2:
-		p.Latency = time.Duration(m.TS[2]-m.TS[0]) * 100 * time.Microsecond / 2
-		p.Offset = int64(m.TS[0]+m.TS[2])/2 - int64(m.TS[1])
-		p.Synced = true
+		p.adopt(m.TS[2]-m.TS[0], int64(m.TS[0]+m.TS[2])/2-int64(m.TS[1]), now)
 	}
 	return nil, nil
 }
