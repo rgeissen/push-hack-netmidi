@@ -53,9 +53,6 @@ func TestLostPacketsAreCounted(t *testing.T) {
 	if p.Packets != 7 || p.Lost != 2+2 {
 		t.Errorf("packets %d lost %d, want 7 and 4", p.Packets, p.Lost)
 	}
-	if p.Synced {
-		t.Error("synced before any clock exchange")
-	}
 }
 
 // Before the clocks are synced the messages carry no times: they are
@@ -63,6 +60,9 @@ func TestLostPacketsAreCounted(t *testing.T) {
 func TestNoTimesBeforeSync(t *testing.T) {
 	w := newWire(t)
 	connect(t, w)
+	// connect ran the first clock sync; undo it, as for a responder whose
+	// initiator has not synced yet.
+	w.a.peers[w.b.SSRC].Synced = false
 	pkt := MarshalData(1, 12345, w.b.SSRC, [][]byte{{0x90, 60, 100}})
 	_, evs := w.a.Receive(PortData, dataOf(w.ctrl(w.b)), pkt, w.now)
 	if len(evs) != 1 || evs[0].At != nil {
