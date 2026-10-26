@@ -51,6 +51,7 @@
     <label>Name <input id="name" maxlength="63"></label>
     <label>UDP port <input id="port" type="number" min="1024" max="65534" step="2"></label>
     <label>Buffer <input id="lat" type="number" min="0" max="500"> ms</label>
+    <label class="sw"><input id="clockin" type="checkbox"> Clock and transport from the network reach Live</label>
     <label class="sw"><input id="enabled" type="checkbox"> On</label>
     <button class="p" id="apply">Apply</button>
   </div>
@@ -112,6 +113,7 @@
   <h2>On the iPad</h2>
   <p>iPadOS has Apple MIDI built in, but an app has to turn its <b>network session</b> on. AUM does not; a free app such as <b>midimittr</b> does (Network, Session: on). The Push then shows up in that app's directory under its name: tap it to connect. In AUM pick <b>Network Session 1</b> as a MIDI input or output.</p>
   <p>For the Push to connect by itself (Connect above), the iPad must allow connections from anyone (midimittr: "Who may connect: Anyone").</p>
+  <p>Clock, Start, Stop and Song Position from the network are <b>kept out</b> unless the switch above is on: the Push is meant to stay the master. Clock from the Push to the iPad is Live's own Sync setting for the Net MIDI output.</p>
   <p>Messages from the iPad carry the time they were sent; the Push plays them at that time plus the <b>buffer</b>. 10 ms suits a good Wi-Fi; raise it if notes stutter or the page counts many late packets, lower it for a wired link.</p>
   <p>Over Wi-Fi expect a few milliseconds of jitter. Use Ableton Link for tempo, not MIDI clock. Live sends clock to Net MIDI only with <b>Sync</b> on for it in Settings, MIDI.</p>
 </section>
@@ -142,6 +144,7 @@
     $('sess').className = 'pill ' + (s.enabled ? 'on' : 'off');
     if (!editing) { $('name').value = s.name; $('port').value = s.port; $('lat').value = s.latency_ms; }
     $('enabled').checked = s.enabled;
+    $('clockin').checked = s.clock_in;
     $('sessinfo').textContent = s.error ? '' : 'Control port UDP ' + s.port + ', data port ' + (s.port + 1) + '. ' + (s.alsa ? 'MIDI port "' + s.own_port + '" is open. ' : 'Waiting for the MIDI side (boot settle). ') + 'Messages from the network wait ' + s.latency_ms + ' ms past their time; ' + s.late + ' packets came later than that' + (s.late > 50 ? ' (raise the buffer)' : '') + '.';
     if (s.error) $('errbar').textContent = s.error;
     $('ownport').textContent = s.own_port;
@@ -203,9 +206,10 @@
     else if (d.remove) { var rr = routesOf(); rr.splice(+d.remove, 1); post('api/routes', rr).catch(fail); }
   });
   $('apply').onclick = function () {
-    post('api/session', { name: $('name').value, port: Number($('port').value), latency_ms: Number($('lat').value), enabled: $('enabled').checked }).catch(fail);
+    post('api/session', { name: $('name').value, port: Number($('port').value), latency_ms: Number($('lat').value), clock_in: $('clockin').checked, enabled: $('enabled').checked }).catch(fail);
   };
   $('enabled').onchange = function () { post('api/session', { enabled: $('enabled').checked }).catch(fail); };
+  $('clockin').onchange = function () { post('api/session', { clock_in: $('clockin').checked }).catch(fail); };
   $('connect').onclick = function () {
     post('api/connect', { host: $('chost').value, port: Number($('cport').value), remember: $('cremember').checked }).catch(fail);
   };

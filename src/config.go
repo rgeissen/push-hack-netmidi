@@ -34,6 +34,7 @@ type Config struct {
 	Port      int          `json:"port"`       // the control port; data is port + 1
 	Enabled   bool         `json:"enabled"`    // the session is up and announced
 	LatencyMs int          `json:"latency_ms"` // messages from the network wait this long past their time
+	ClockIn   bool         `json:"clock_in"`   // clock and transport from the network reach Live (off: Push stays the master)
 	Peers     []Remembered `json:"peers"`
 	Routes    []Route      `json:"routes"`
 }

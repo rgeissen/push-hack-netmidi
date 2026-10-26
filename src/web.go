@@ -40,12 +40,13 @@ func routes(a *App) http.Handler {
 			Name    *string `json:"name"`
 			Port    *int    `json:"port"`
 			Latency *int    `json:"latency_ms"`
+			ClockIn *bool   `json:"clock_in"`
 			Enabled *bool   `json:"enabled"`
 		}
 		if !decode(w, r, &body) {
 			return
 		}
-		if err := a.SetSession(body.Name, body.Port, body.Latency, body.Enabled); err != nil {
+		if err := a.SetSession(body.Name, body.Port, body.Latency, body.ClockIn, body.Enabled); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

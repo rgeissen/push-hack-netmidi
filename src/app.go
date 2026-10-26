@@ -69,6 +69,7 @@ type State struct {
 	Alsa       bool         `json:"alsa"` // the Net MIDI port is open
 	OwnPort    string       `json:"own_port"`
 	LatencyMs  int          `json:"latency_ms"` // the buffer messages from the network wait in
+	ClockIn    bool         `json:"clock_in"`   // clock and transport from the network reach Live
 	Late       uint64       `json:"late"`       // packets that came after their time plus the buffer
 	Pending    int          `json:"pending"`    // messages waiting for their time
 	Peers      []PeerView   `json:"peers"`
@@ -237,9 +238,10 @@ func (a *App) onEvent(ev rtpmidi.Event) {
 func (a *App) schedule(ev rtpmidi.Event) {
 	a.mu.Lock()
 	lat := time.Duration(a.cfg.LatencyMs) * time.Millisecond
+	clockIn := a.cfg.ClockIn
 	a.mu.Unlock()
 	if ev.At == nil {
-		a.fromNet(ev.Messages)
+		a.fromNet(keepClock(ev.Messages, clockIn))
 		return
 	}
 	now := time.Now()
@@ -249,8 +251,34 @@ func (a *App) schedule(ev rtpmidi.Event) {
 		a.late.Add(1)
 	}
 	for i, msg := range ev.Messages {
-		a.sched.add(ev.At[i].Add(lat+shift), msg)
+		if clockIn || !isClock(msg) {
+			a.sched.add(ev.At[i].Add(lat+shift), msg)
+		}
 	}
+}
+
+// isClock says whether a message is clock or transport: Clock, Start,
+// Continue, Stop, Song Position. With clock from the network off these
+// stay out, so the Push stays the sync master.
+func isClock(msg []byte) bool {
+	switch msg[0] {
+	case 0xF8, 0xFA, 0xFB, 0xFC, 0xF2:
+		return true
+	}
+	return false
+}
+
+func keepClock(msgs [][]byte, clockIn bool) [][]byte {
+	if clockIn {
+		return msgs
+	}
+	var out [][]byte
+	for _, m := range msgs {
+		if !isClock(m) {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func (a *App) fromNet(msgs [][]byte) {
@@ -365,7 +393,7 @@ func (a *App) invite(host string, port int) {
 }
 
 // SetSession changes name, port, buffer (ms) or on/off; nil leaves a field as it is.
-func (a *App) SetSession(name *string, port *int, latency *int, enabled *bool) error {
+func (a *App) SetSession(name *string, port *int, latency *int, clockIn, enabled *bool) error {
 	a.mu.Lock()
 	var old *rtpmidi.Transport
 	defer func() { a.mu.Unlock(); closeSession(old) }()
@@ -390,6 +418,9 @@ func (a *App) SetSession(name *string, port *int, latency *int, enabled *bool) e
 			return fmt.Errorf("the buffer is 0 to 500 ms")
 		}
 		a.cfg.LatencyMs = *latency
+	}
+	if clockIn != nil {
+		a.cfg.ClockIn = *clockIn
 	}
 	if enabled != nil {
 		a.cfg.Enabled = *enabled
@@ -531,7 +562,7 @@ func (a *App) State() State {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	s := State{Version: a.version, Name: a.cfg.Name, Port: a.cfg.Port, Enabled: a.cfg.Enabled,
-		Error: a.errText, Alsa: a.br != nil, OwnPort: ownPortName, LatencyMs: a.cfg.LatencyMs,
+		Error: a.errText, Alsa: a.br != nil, OwnPort: ownPortName, LatencyMs: a.cfg.LatencyMs, ClockIn: a.cfg.ClockIn,
 		Late: a.late.Load(), Pending: a.sched.pending(),
 		Remembered: append([]Remembered{}, a.cfg.Peers...), Monitor: append([]MonLine{}, a.monitor...)}
 	if a.av != nil {
