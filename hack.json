@@ -1,0 +1,18 @@
+{
+  "id": "netmidi",
+  "name": "Net MIDI",
+  "version": "0.1.0",
+  "description": "Puts the Push's MIDI ports on the network as Apple MIDI (RTP-MIDI), so an iPad, iPhone or Mac sees the Push as a network MIDI peer: AUM lists it as Network Session 1. Live gets one port, Net MIDI, and a route table bridges other ports (Stacks, Riffs, ...) to the network. Configured on Push (the NETMIDI tab of the Shadow UI) and on its web page. Needs only push-manager; no display.",
+  "author": "rgeissen",
+  "binary": "netmidi",
+  "port": 7713,
+  "enabled": true,
+  "web_ui": {
+    "label": "Net MIDI",
+    "path": "/"
+  },
+  "shadow_ui": {
+    "label": "NETMIDI",
+    "path": "/api/shadow"
+  }
+}

@@ -1,0 +1,72 @@
+name: Release
+
+# A v* tag builds netmidi for Push 3, publishes netmidi.tar.gz as a GitHub
+# Release, and points release.json at it -- the file push-catalog reads.
+#
+# CGO_ENABLED=0 is not optional: a linux/amd64 runner building for
+# linux/amd64 would otherwise link against its own glibc, and the binary
+# fails to exec on Push 3 (catalog/PUBLISHING.md).
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify version match
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          HACK_VERSION=$(python3 -c 'import json;print(json.load(open("hack.json"))["version"])')
+          if [ "$TAG_VERSION" != "$HACK_VERSION" ]; then
+            echo "ERROR: tag $TAG_VERSION does not match hack.json version $HACK_VERSION"
+            exit 1
+          fi
+
+      - name: Test and build (linux/amd64, no cgo)
+        run: |
+          docker run --rm -v "$PWD":/w -w /w/src -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH=amd64 \
+            -e GOFLAGS=-buildvcs=false golang:1.25 sh -c '
+            go vet ./... &&
+            go test ./... &&
+            go build -trimpath -ldflags "-s -w" -o ../netmidi .'
+          file netmidi
+          file netmidi | grep -q "statically linked" || { echo "ERROR: netmidi is not static"; exit 1; }
+
+      - name: Package
+        run: |
+          mkdir -p dist/netmidi
+          cp netmidi hack.json LICENSE dist/netmidi/
+          chmod +x dist/netmidi/netmidi
+          tar -czf netmidi.tar.gz -C dist netmidi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: netmidi.tar.gz
+
+      - name: Commit release.json
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          RELEASED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git fetch origin main
+          git checkout -f main
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cat > release.json << EOF
+          {
+            "version": "${VERSION}",
+            "download_url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/netmidi.tar.gz",
+            "released_at": "${RELEASED_AT}"
+          }
+          EOF
+          git add release.json
+          git commit -m "chore: release.json for ${{ github.ref_name }}" || echo "No changes to commit"
+          git push origin main

@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Net MIDI</title>
+<style>
+  :root { --bg:#141414; --card:#1e1e1e; --line:#2c2c2c; --fg:#e8e8e8; --dim:#9a9a9a; --acc:#f5a623; --ok:#5ec26a; --bad:#e05a4e; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  header { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:18px; font-weight:600; }
+  header .v { color:var(--dim); font-size:12px; }
+  main { max-width: 960px; margin:0 auto; padding:12px 16px 40px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin:12px 0; }
+  h2 { margin:0 0 10px; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:6px 8px; border-top:1px solid var(--line); vertical-align:middle; }
+  th { color:var(--dim); font-weight:500; border-top:0; font-size:12px; }
+  td.r, th.r { text-align:right; }
+  input, select, button { font:inherit; color:var(--fg); background:#262626; border:1px solid #3a3a3a; border-radius:6px; padding:6px 9px; }
+  input[type=number] { width:7em; }
+  button { cursor:pointer; }
+  button.p { background:var(--acc); color:#111; border-color:var(--acc); font-weight:600; }
+  button.x { color:var(--bad); }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:6px 0; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:#333; }
+  .pill.on { background:#244d2b; color:var(--ok); }
+  .pill.off { background:#4a2a27; color:var(--bad); }
+  .dim { color:var(--dim); }
+  .err { color:var(--bad); }
+  pre { margin:0; max-height:220px; overflow:auto; font:12px/1.4 ui-monospace, Menlo, monospace; color:#cfcfcf; }
+  label.sw { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+  .help p { margin:6px 0; }
+  code { background:#2a2a2a; padding:1px 5px; border-radius:4px; }
+  @media (max-width:600px) { th:nth-child(4), td:nth-child(4) { display:none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Net MIDI</h1>
+  <span class="v" id="ver"></span>
+  <span id="sess" class="pill off">off</span>
+  <span id="errbar" class="err"></span>
+</header>
+<main>
+
+<section>
+  <h2>Session</h2>
+  <div class="row">
+    <label>Name <input id="name" maxlength="63"></label>
+    <label>UDP port <input id="port" type="number" min="1024" max="65534" step="2"></label>
+    <label class="sw"><input id="enabled" type="checkbox"> On</label>
+    <button class="p" id="apply">Apply</button>
+  </div>
+  <div class="dim" id="sessinfo"></div>
+</section>
+
+<section>
+  <h2>Peers</h2>
+  <table id="peers">
+    <thead><tr><th>Name</th><th>Address</th><th>State</th><th class="r">Latency</th><th class="r">In</th><th class="r">Out</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="dim" id="nopeers">No peer connected. On the iPad, turn its network session on and pick this Push in its directory, or connect from here.</div>
+</section>
+
+<section>
+  <h2>Connect</h2>
+  <table id="found">
+    <thead><tr><th>Found on the network</th><th>Host</th><th>Address</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="row" style="margin-top:10px">
+    <label>Host <input id="chost" placeholder="192.168.0.20 or ipad.local"></label>
+    <label>Port <input id="cport" type="number" value="5004" min="1024" max="65534" step="2"></label>
+    <label class="sw"><input id="cremember" type="checkbox" checked> Remember</label>
+    <button class="p" id="connect">Connect</button>
+  </div>
+  <table id="saved">
+    <thead><tr><th>Remembered (invited at start)</th><th>Address</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Routes</h2>
+  <p class="dim" style="margin:0 0 8px">The port <b id="ownport">Net MIDI</b> is always bridged: Live sees it as an input and an output. A route adds another port. The iPad merges everything into one port, so give each source its own channel if they must stay apart.</p>
+  <table id="routes">
+    <thead><tr><th>Port</th><th>Direction</th><th>Channel</th><th>Status</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="row" style="margin-top:10px">
+    <select id="rport"></select>
+    <select id="rdir">
+      <option value="out">to the network</option>
+      <option value="in">from the network</option>
+    </select>
+    <select id="rch"><option value="0">channel as is</option></select>
+    <button id="addroute">Add route</button>
+    <button id="reload" title="read the port list again">Refresh ports</button>
+  </div>
+</section>
+
+<section>
+  <h2>Monitor</h2>
+  <pre id="mon"></pre>
+</section>
+
+<section class="help">
+  <h2>On the iPad</h2>
+  <p>iPadOS has Apple MIDI built in, but an app has to turn its <b>network session</b> on. AUM does not; a free app such as <b>midimittr</b> does (Network, Session: on). The Push then shows up in that app's directory under its name: tap it to connect. In AUM pick <b>Network Session 1</b> as a MIDI input or output.</p>
+  <p>For the Push to connect by itself (Connect above), the iPad must allow connections from anyone (midimittr: "Who may connect: Anyone").</p>
+  <p>Over Wi-Fi expect a few milliseconds of jitter. Use Ableton Link for tempo, not MIDI clock. Live sends clock to Net MIDI only with <b>Sync</b> on for it in Settings, MIDI.</p>
+</section>
+</main>
+<script>
+(function () {
+  var S = null, ports = [];
+  var $ = function (id) { return document.getElementById(id); };
+  var editing = false;
+  ['name', 'port'].forEach(function (id) {
+    $(id).addEventListener('focus', function () { editing = true; });
+    $(id).addEventListener('blur', function () { editing = false; });
+  });
+  for (var i = 1; i <= 16; i++) { var o = document.createElement('option'); o.value = i; o.textContent = 'channel ' + i; $('rch').appendChild(o); }
+
+  function post(path, body) {
+    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+      .then(function (r) { if (!r.ok) return r.text().then(function (t) { throw new Error(t || r.statusText); }); });
+  }
+  function fail(e) { $('errbar').textContent = String(e.message || e); setTimeout(function () { $('errbar').textContent = ''; }, 6000); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function td(s, cls) { return '<td' + (cls ? ' class="' + cls + '"' : '') + '>' + s + '</td>'; }
+
+  function render(s) {
+    S = s;
+    $('ver').textContent = 'v' + s.version + (s.host ? ' on ' + s.host : '');
+    $('sess').textContent = s.enabled ? (s.announced ? 'on, announced as "' + s.announced + '"' : 'on, not announced') : 'off';
+    $('sess').className = 'pill ' + (s.enabled ? 'on' : 'off');
+    if (!editing) { $('name').value = s.name; $('port').value = s.port; }
+    $('enabled').checked = s.enabled;
+    $('sessinfo').textContent = s.error ? '' : 'Control port UDP ' + s.port + ', data port ' + (s.port + 1) + '. ' + (s.alsa ? 'MIDI port "' + s.own_port + '" is open.' : 'Waiting for the MIDI side (boot settle).');
+    if (s.error) $('errbar').textContent = s.error;
+    $('ownport').textContent = s.own_port;
+
+    var tb = $('peers').querySelector('tbody'); tb.innerHTML = '';
+    (s.peers || []).forEach(function (p) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = td(esc(p.name)) + td(esc(p.addr)) + td(p.state + (p.initiator ? ' (invited by us)' : '')) +
+        td(p.state === 'connected' ? p.latency_ms.toFixed(1) + ' ms' : '', 'r') + td(p.in, 'r') + td(p.out, 'r') +
+        td('<button class="x" data-ssrc="' + p.ssrc + '">Drop</button>');
+      tb.appendChild(tr);
+    });
+    $('nopeers').style.display = (s.peers || []).length ? 'none' : '';
+
+    tb = $('found').querySelector('tbody'); tb.innerHTML = '';
+    (s.found || []).forEach(function (f, i) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = td(esc(f.name) + (f.own ? ' <span class="dim">(this Push)</span>' : '')) + td(esc(f.host)) + td(esc(f.addr) + ':' + f.port) +
+        td('<button data-found="' + i + '">Connect</button>');
+      tb.appendChild(tr);
+    });
+    if (!(s.found || []).length) { tb.innerHTML = '<tr><td colspan="4" class="dim">Nothing found yet. An iPad shows up here once its network session is on.</td></tr>'; }
+
+    tb = $('saved').querySelector('tbody'); tb.innerHTML = '';
+    (s.remembered || []).forEach(function (r, i) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = td(esc(r.name || '')) + td(esc(r.host) + ':' + r.port) +
+        td('<button data-saved="' + i + '">Connect</button> <button class="x" data-forget="' + i + '">Forget</button>');
+      tb.appendChild(tr);
+    });
+    $('saved').style.display = (s.remembered || []).length ? '' : 'none';
+
+    tb = $('routes').querySelector('tbody'); tb.innerHTML = '';
+    (s.routes || []).forEach(function (r, i) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = td(esc(r.client) + ' / <b>' + esc(r.port) + '</b>') + td(r.dir === 'out' ? 'to the network' : 'from the network') +
+        td(r.channel ? 'channel ' + r.channel : 'as is') +
+        td((r.on ? '<span class="pill on">on</span>' : '<span class="pill off">off</span>') + (r.resolved ? '' : ' <span class="dim">port not found</span>')) +
+        td('<button data-toggle="' + i + '">' + (r.on ? 'Turn off' : 'Turn on') + '</button> <button class="x" data-remove="' + i + '">Remove</button>');
+      tb.appendChild(tr);
+    });
+    if (!(s.routes || []).length) { tb.innerHTML = '<tr><td colspan="5" class="dim">No route. Only ' + esc(s.own_port) + ' is bridged.</td></tr>'; }
+
+    $('mon').textContent = (s.monitor || []).slice().reverse().map(function (m) {
+      return m.t + '  ' + (m.dir === 'in' ? '<- net' : 'net <-') + '  ' + m.via.padEnd(14) + '  ' + m.hex.replace(/(..)/g, '$1 ').trim();
+    }).join('\n');
+  }
+
+  function routesOf() { return (S.routes || []).map(function (r) { return { client: r.client, port: r.port, dir: r.dir, channel: r.channel, on: r.on }; }); }
+
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    var d = b.dataset;
+    if (d.ssrc) post('api/disconnect', { ssrc: Number(d.ssrc) }).catch(fail);
+    else if (d.found) { var f = S.found[+d.found]; post('api/connect', { host: f.addr, port: f.port, name: f.name, remember: $('cremember').checked }).catch(fail); }
+    else if (d.saved) { var r = S.remembered[+d.saved]; post('api/connect', { host: r.host, port: r.port, name: r.name, remember: false }).catch(fail); }
+    else if (d.forget) { var q = S.remembered[+d.forget]; post('api/forget', { host: q.host, port: q.port }).catch(fail); }
+    else if (d.toggle) { var rs = routesOf(); rs[+d.toggle].on = !rs[+d.toggle].on; post('api/routes', rs).catch(fail); }
+    else if (d.remove) { var rr = routesOf(); rr.splice(+d.remove, 1); post('api/routes', rr).catch(fail); }
+  });
+  $('apply').onclick = function () {
+    post('api/session', { name: $('name').value, port: Number($('port').value), enabled: $('enabled').checked }).catch(fail);
+  };
+  $('enabled').onchange = function () { post('api/session', { enabled: $('enabled').checked }).catch(fail); };
+  $('connect').onclick = function () {
+    post('api/connect', { host: $('chost').value, port: Number($('cport').value), remember: $('cremember').checked }).catch(fail);
+  };
+  $('addroute').onclick = function () {
+    var p = ports[+$('rport').value]; if (!p) return;
+    var rs = routesOf();
+    rs.push({ client: p.client, port: p.port, dir: $('rdir').value, channel: Number($('rch').value), on: true });
+    post('api/routes', rs).catch(fail);
+  };
+  function loadPorts() {
+    fetch('api/ports').then(function (r) { return r.json(); }).then(function (ps) {
+      ports = ps; var sel = $('rport'); sel.innerHTML = '';
+      ps.forEach(function (p, i) { var o = document.createElement('option'); o.value = i; o.textContent = p.client + ' / ' + p.port + '  [' + p.caps + ']'; sel.appendChild(o); });
+      if (!ps.length) { var o = document.createElement('option'); o.textContent = 'no ports yet'; sel.appendChild(o); }
+    }).catch(fail);
+  }
+  $('reload').onclick = loadPorts;
+
+  function connectEvents() {
+    var es = new EventSource('api/events');
+    es.onmessage = function (e) { try { render(JSON.parse(e.data)); } catch (err) {} };
+    es.onerror = function () { es.close(); setTimeout(connectEvents, 2000); };
+  }
+  fetch('api/state').then(function (r) { return r.json(); }).then(render).catch(fail);
+  loadPorts();
+  setInterval(loadPorts, 10000);
+  connectEvents();
+})();
+</script>
+</body>
+</html>

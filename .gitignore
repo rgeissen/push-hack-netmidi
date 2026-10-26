@@ -1,0 +1,6 @@
+/netmidi
+/dist/
+/go.work
+/go.work.sum
+/build/
+.DS_Store
