@@ -73,11 +73,16 @@ Hack release) and pick the **NETMIDI** tab. Rows:
 - `PEER` for each connected peer, with its address and latency.
 - `FOUND` for each network session Bonjour sees.
 - `SAVED` for each remembered peer.
+- `CLOCK IN` off or on: whether clock and transport from the network
+  reach Live.
+- `BUFFER`: how long messages from the network wait past their time, and
+  how far behind their time packets have lately come.
 - `ROUTE` for each route, with its channel and whether its port is there.
 
 The jog wheel moves the cursor. The buttons under the screen: **ON/OFF**
 (the session), **CONNECT** on a FOUND or SAVED row, **DROP** on a PEER row,
-**FORGET** on a SAVED row, **ROUTE ON/OFF** on a ROUTE row.
+**FORGET** on a SAVED row, **ROUTE ON/OFF** on a ROUTE row, **CLOCK
+ON/OFF** on the CLOCK IN row, **-5 MS** and **+5 MS** on the BUFFER row.
 
 ## The web page
 

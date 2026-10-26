@@ -36,6 +36,7 @@ const (
 	rowSaved
 	rowRoute
 	rowClock
+	rowBuffer
 	rowNote
 )
 
@@ -71,6 +72,11 @@ func (a *App) shadowRows(s State) []shadowRow {
 		clock = "CLOCK IN on   (clock and transport from the network reach Live)"
 	}
 	rows = append(rows, shadowRow{rowClock, 0, clock})
+	buf := fmt.Sprintf("BUFFER   %d ms", s.LatencyMs)
+	if s.BehindMs > 0 {
+		buf += fmt.Sprintf("   (packets lately up to %.0f ms behind their time)", s.BehindMs)
+	}
+	rows = append(rows, shadowRow{rowBuffer, 0, buf})
 	for i, p := range s.Peers {
 		state := "connecting"
 		if p.State == "connected" {
@@ -164,6 +170,9 @@ func (a *App) shadowView() shadowView {
 			} else {
 				v.Buttons[3] = "CLOCK ON"
 			}
+		case rowBuffer:
+			v.Buttons[4] = "-5 MS"
+			v.Buttons[5] = "+5 MS"
 		}
 	}
 	return v
@@ -244,6 +253,16 @@ func (a *App) shadowPress(cc, value int) {
 		case rowSaved:
 			a.Forget(s.Remembered[r.idx].Host, s.Remembered[r.idx].Port)
 		}
+	case push3.CCScreenBot5, push3.CCScreenBot6:
+		if cur < 0 || rows[cur].kind != rowBuffer {
+			return
+		}
+		ms := s.LatencyMs - 5
+		if cc == push3.CCScreenBot6 {
+			ms = s.LatencyMs + 5
+		}
+		ms = max(0, min(500, ms))
+		a.SetSession(nil, nil, &ms, nil, nil)
 	case push3.CCScreenBot4:
 		if cur >= 0 && rows[cur].kind == rowClock {
 			in := !s.ClockIn
