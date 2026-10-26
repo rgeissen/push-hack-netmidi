@@ -214,6 +214,19 @@ func (a *App) shadowView() shadowView {
 			v.Buttons[1] = "ADD"
 		}
 	}
+	return hinted(v)
+}
+
+// hinted puts the jog hint on a view whose right-hand buttons are free:
+// push-manager draws the hint over buttons 5 to 8.
+func hinted(v shadowView) shadowView {
+	for _, b := range v.Buttons[4:] {
+		if b != "" {
+			v.Hint = ""
+			return v
+		}
+	}
+	v.Hint = "jog: move"
 	return v
 }
 
@@ -237,7 +250,7 @@ func (a *App) pickerView(sh shadowState) shadowView {
 		v.Buttons[2] = "FROM NET"
 	}
 	v.Status = "R: the port sends (a route to the network reads it); W: it receives"
-	return v
+	return hinted(v)
 }
 
 func connectedCount(s State) int {
