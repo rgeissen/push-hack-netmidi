@@ -33,10 +33,11 @@ const (
 	EvRejected                      // it said no to our invite
 	EvFailed                        // our invite got no answer
 	EvMIDI                          // Messages arrived from it
+	EvInvited                       // it invited us (the handshake goes on)
 )
 
 func (k EventKind) String() string {
-	return [...]string{"connected", "disconnected", "rejected", "failed", "midi"}[k]
+	return [...]string{"connected", "disconnected", "rejected", "failed", "midi", "invited"}[k]
 }
 
 // Event is one thing that happened to a peer.
@@ -247,7 +248,8 @@ func (e *Endpoint) receiveExchange(port Port, from netip.AddrPort, m Exchange, n
 			p := &Peer{SSRC: m.SSRC, Name: m.Name, Token: m.Token, Ctrl: from, Data: dataOf(from),
 				State: StateInvitingData, LastSeen: now, lastSent: now}
 			e.peers[m.SSRC] = p
-			return []Out{{PortControl, from, e.exchange(CmdAccept, m.Token)}}, nil
+			return []Out{{PortControl, from, e.exchange(CmdAccept, m.Token)}},
+				[]Event{{Kind: EvInvited, Peer: *p}}
 		}
 		p := e.peers[m.SSRC]
 		if p == nil || p.Initiator || p.Token != m.Token {

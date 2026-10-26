@@ -23,14 +23,15 @@ type Transport struct {
 	once sync.Once
 }
 
-// Listen binds the control port and the data port (port + 1), IPv4 only,
-// and starts the session.
+// Listen binds the control port and the data port (port + 1) on IPv4 and
+// IPv6 (Apple's resolver prefers IPv6 for push.local), and starts the
+// session.
 func Listen(port int, name string) (*Transport, error) {
-	ctrl, err := net.ListenUDP("udp4", &net.UDPAddr{Port: port})
+	ctrl, err := net.ListenUDP("udp", &net.UDPAddr{Port: port})
 	if err != nil {
 		return nil, fmt.Errorf("control port %d: %w", port, err)
 	}
-	data, err := net.ListenUDP("udp4", &net.UDPAddr{Port: port + 1})
+	data, err := net.ListenUDP("udp", &net.UDPAddr{Port: port + 1})
 	if err != nil {
 		ctrl.Close()
 		return nil, fmt.Errorf("data port %d: %w", port+1, err)
