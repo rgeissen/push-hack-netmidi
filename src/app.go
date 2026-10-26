@@ -86,21 +86,20 @@ type App struct {
 	cfgPath string
 	broker  *sse.Broker[State]
 
-	mu       sync.Mutex
-	cfg      Config
-	tr       *rtpmidi.Transport
-	av       *Avahi
-	br       *Bridge
-	found    map[string]Found
-	monitor  []MonLine
-	errText  string
-	dirty    atomic.Bool
-	cursor   int       // the Shadow tab's
-	offArmed time.Time // when OFF was pressed once on the tab
-	sched    *sched
-	late     atomic.Uint64
-	behind   behind
-	done     chan struct{}
+	mu      sync.Mutex
+	cfg     Config
+	tr      *rtpmidi.Transport
+	av      *Avahi
+	br      *Bridge
+	found   map[string]Found
+	monitor []MonLine
+	errText string
+	dirty   atomic.Bool
+	shadow  shadowState // the tab's own state
+	sched   *sched
+	late    atomic.Uint64
+	behind  behind
+	done    chan struct{}
 }
 
 func newApp(cfgPath, version string) *App {

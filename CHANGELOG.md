@@ -19,3 +19,7 @@
 - IPv6: Apple's resolver gives `push.local` only its IPv6 addresses.
 - Session off with a peer connected froze the hack; OFF on the tab takes
   two presses.
+- The NETMIDI tab has every setting of the page but the typed ones:
+  routes can be added (a port picker), toggled, given a channel and
+  removed; a found peer can be connected and remembered; the buffer
+  moves in steps of 5 and 50 ms.

@@ -9,8 +9,8 @@ It is a [Push Hack](https://github.com/federico-pepe/ableton-push-hack)
 catalog hack. It needs push-manager (for its tab on the Push's screen and
 the link on the web page); it does not draw on the display.
 
-Status: early. Tested on the device against itself and against Apple's
-Bonjour resolver. Tested with an iPad: see "Status" below.
+Status: early, but it works with an iPad running AUM. See "Timing and
+sync" for what to expect over Wi-Fi.
 
 ## Why not USB
 
@@ -38,51 +38,98 @@ for common USB Ethernet adapters for a wired link.
 ## On the iPad
 
 iPadOS has Apple MIDI built in, but an app has to turn the **network
-session** on. AUM does not have that switch; a free app such as
-**midimittr** does (Network, Session on). The Push then shows up in that
-app's directory under its name. Tap it to connect. In AUM, pick **Network
-Session 1** as a MIDI input or output.
+session** on. AUM has a network MIDI list of its own: tap the Push there.
+Other apps need a helper such as the free **midimittr** (Network, Session
+on); the Push then shows up in that app's directory under its name. In
+AUM, pick **Network Session 1** as a MIDI input or output.
 
 For the Push to connect by itself, the iPad must allow connections from
 anyone (in midimittr: "Who may connect: Anyone").
 
-Clock, Start, Stop and Song Position from the network are kept out
-unless **Clock in** is on (the web page, or the CLOCK IN row on the
-tab). Live on the Push follows clock on any input with Sync on, and the
-Push is meant to stay the master. Clock from the Push to the iPad is
-Live's own Sync setting for the Net MIDI output.
-
-Messages from the iPad carry the time they were sent, and the Push plays
-them at that time plus a **buffer** (10 ms by default; the web page sets
-it). The page shows how far behind their time packets arrive: set the
-buffer above that and the timing is steady, with everything from the
-iPad that many milliseconds late (a negative Track Delay on the receiving
-track in Live pulls it back). On a good Wi-Fi 20 to 30 ms is typical; a
-wired link needs much less. The clock offset comes from the clock sync
-with the shortest round trip of the last minutes, so one slow exchange
-does not move every note. For tempo, use
-Ableton Link (AUM and Live on the Push both have it), not MIDI clock. Live sends
-clock to Net MIDI only with **Sync** on for that port (Settings, MIDI).
-
 ## On the Push
 
-Open the Shadow UI (Shift + Help, or the Shadow UI's gesture of your Push
-Hack release) and pick the **NETMIDI** tab. Rows:
+Open the Shadow UI and pick the **NETMIDI** tab. It has every setting of
+the web page except the ones that need typing: the session's name and
+port, and connecting to an address. Rows:
 
 - `SESSION` on or off, the name and the UDP port.
-- `PEER` for each connected peer, with its address and latency.
-- `FOUND` for each network session Bonjour sees.
-- `SAVED` for each remembered peer.
 - `CLOCK IN` off or on: whether clock and transport from the network
-  reach Live.
+  reach Live. See "Timing and sync".
 - `BUFFER`: how long messages from the network wait past their time, and
   how far behind their time packets have lately come.
-- `ROUTE` for each route, with its channel and whether its port is there.
+- `PEER` for each connected peer: address, latency, packets lost.
+- `FOUND` for each network session Bonjour sees.
+- `SAVED` for each remembered peer.
+- `ROUTE` for each route: direction, port, channel, on or off, and
+  whether the port is there.
+- `ADD ROUTE ...` opens a list of the Push's MIDI ports.
 
-The jog wheel moves the cursor. The buttons under the screen: **ON/OFF**
-(the session), **CONNECT** on a FOUND or SAVED row, **DROP** on a PEER row,
-**FORGET** on a SAVED row, **ROUTE ON/OFF** on a ROUTE row, **CLOCK
-ON/OFF** on the CLOCK IN row, **-5 MS** and **+5 MS** on the BUFFER row.
+The jog wheel moves the cursor. The buttons under the screen depend on
+the row:
+
+| Row | Buttons |
+|-----|---------|
+| any | 1 `ON`, or `OFF` (twice: the first press asks `OFF: SURE?`) |
+| `CLOCK IN` | 4 `CLOCK ON` / `CLOCK OFF` |
+| `BUFFER` | 5 `-5 MS`, 6 `+5 MS`, 7 `-50 MS`, 8 `+50 MS` |
+| `PEER` | 3 `DROP` |
+| `FOUND` | 2 `CONNECT`, 3 `CONNECT+SAVE` (remembered, invited at every start) |
+| `SAVED` | 2 `CONNECT`, 3 `FORGET` |
+| `ROUTE` | 4 `ROUTE ON` / `ROUTE OFF`, 5 `CH -`, 6 `CH +`, 7 `REMOVE` (twice) |
+| `ADD ROUTE` | 2 `ADD`: the port list opens. There: jog to a port, 2 `TO NET` or 3 `FROM NET`, 1 `BACK`. `R` after a port means it sends (a route to the network reads it), `W` that it receives. |
+
+**OFF** ends the whole session: every peer is dropped, the Push leaves
+the iPad's list, the ports close. **DROP** ends one peer's connection;
+the session stays on and the iPad can connect again. Leaving the tab
+changes nothing: the session lives in the hack, not on the screen.
+
+## Timing and sync
+
+What the first evening with an iPad taught, in the order it came up.
+
+**Tempo.** Live on the Push follows MIDI clock on any input that has
+Sync on, and most iPad hosts send clock. With clock arriving over Wi-Fi
+the Push's tempo wandered, even though the Push was meant to be the
+master. So clock, Start, Continue, Stop and Song Position from the
+network are **kept out** unless `CLOCK IN` is on. Use **Ableton Link**
+for tempo instead: AUM and Live on the Push both have it, it carries
+tempo and beat phase over the network with no jitter, and whichever side
+changes the tempo last sets it. With Link on, leave Sync off for the Net
+MIDI input and output. A tempo such as 120.01 is Link agreeing a value
+with the iPad, not a fault. If the Push must drive the iPad with MIDI
+clock instead, turn Sync on for the Net MIDI output and Link off.
+
+**Note timing.** Each message from the iPad carries the time it was
+sent. The hack does not play it when the packet lands; it plays it at
+that time, moved by the clock offset the two sides measure every few
+seconds, plus the **buffer**. The offset comes from the clock sync with
+the shortest round trip of the last minutes, so one slow exchange does
+not move every note. A packet that arrives later than its time plus the
+buffer goes out at once, with the spacing between its messages kept.
+
+**The buffer.** Its job is to be longer than the worst delay on the way.
+The tab and the page show how far behind their time packets have lately
+come; set the buffer above that and the timing is steady. Below it,
+notes come out as they arrive, with the network's jitter. The page also
+counts the packets that came later than the buffer, and the packets the
+sequence numbers say were lost.
+
+**What the delay is.** On a home Wi-Fi the Push reaches the router in a
+few milliseconds; an iPad is the slow leg, because iOS puts its radio to
+sleep between packets and traffic comes in bursts. Measured here: Push
+to router 4 ms, Push to iPad 70 ms on average with peaks of 120 ms, and
+packets up to 240 ms behind their time, with no loss at all. A buffer of
+200 ms made it play evenly. What shortens the delay, in the order it
+helps: a USB-C Ethernet adapter on the iPad into the router (the Push can
+stay on Wi-Fi; a buffer of 10 to 20 ms should then do), keeping the MIDI
+app in the foreground with the screen on, Low Power Mode off.
+
+**Lining the delay up with the beat.** With the buffer set, everything
+from the iPad plays that many milliseconds late, evenly. Live on Push 3
+Standalone does not take a negative Track Delay large enough to pull it
+back. AUM has a Link **offset**: set it so AUM runs that many
+milliseconds early (try the negative value first; the sign is AUM's),
+and the notes land on the Push's beat.
 
 ## The web page
 
@@ -149,8 +196,9 @@ The Mac needs Docker, not Go. A `v*` tag builds a release and updates
   web page, the NETMIDI tab. On the device, a second instance playing the
   iPad connects, syncs clocks, and carries notes both ways; Live connects
   to Net MIDI by itself; Apple's resolver on a Mac sees the Push.
-- Not yet checked: an iPad or a Mac as the peer. The protocol follows
-  Apple's, but nothing beats the real thing.
+- Tested with an iPad running AUM over Wi-Fi: it connects (over IPv6),
+  notes go both ways, and with the buffer above the Wi-Fi's delay the
+  timing is steady. See "Timing and sync".
 - Known: iOS merges every network peer into one port, so two Push sources
   need two channels. Live's own ports are not shown one by one; Net MIDI
   is one port, and routes add more.
