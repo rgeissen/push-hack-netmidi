@@ -46,6 +46,12 @@ Session 1** as a MIDI input or output.
 For the Push to connect by itself, the iPad must allow connections from
 anyone (in midimittr: "Who may connect: Anyone").
 
+Clock, Start, Stop and Song Position from the network are kept out
+unless **Clock in** is on (the web page, or the CLOCK IN row on the
+tab). Live on the Push follows clock on any input with Sync on, and the
+Push is meant to stay the master. Clock from the Push to the iPad is
+Live's own Sync setting for the Net MIDI output.
+
 Messages from the iPad carry the time they were sent, and the Push plays
 them at that time plus a **buffer** (10 ms by default; the web page sets
 it). The buffer absorbs Wi-Fi's jitter: raise it if notes stutter or the

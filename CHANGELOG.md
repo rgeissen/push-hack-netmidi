@@ -12,6 +12,8 @@
   plus a buffer (10 ms, set on the page); late and lost packets are
   counted. Before this, a short note whose on and off shared a packet had
   no length, and Wi-Fi's jitter landed on every note.
+- Clock and transport from the network stay out unless Clock in is on:
+  AUM's clock made Live on the Push follow it.
 - IPv6: Apple's resolver gives `push.local` only its IPv6 addresses.
 - Session off with a peer connected froze the hack; OFF on the tab takes
   two presses.
