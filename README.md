@@ -133,8 +133,13 @@ and the notes land on the Push's beat.
 
 ## The web page
 
-Open it from push-manager's menu bar (Net MIDI), or go to
-`http://push.local:<port>/` with the port the catalog assigned. It has the
+Open it from push-manager's menu bar (the **Net MIDI** link), or from
+the hack's card in Push Hack Catalog (**Open**). Both know the port. To
+type it yourself: `http://push.local:<port>/`, where the port is the one
+Push Hack Catalog assigned at install (the lowest free port from 7711;
+it is in `/data/push-hack/hacks/netmidi/hack.json` on the Push). A dev
+deploy with `scripts/deploy.sh` uses **7713**, from this repo's
+`hack.json`. The page has the
 same settings as the tab plus: the session name and port, connect by
 address, the route editor (pick a port from the list, a direction, a
 channel) and the monitor.
