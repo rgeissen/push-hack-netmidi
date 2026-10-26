@@ -8,9 +8,13 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/federico-pepe/ableton-push-hack/core/push3"
 )
+
+// offArmFor is how long the first press of OFF waits for the second.
+const offArmFor = 4 * time.Second
 
 // shadowView is what push-manager draws (its README, "Shadow UI tabs from
 // other hacks").
@@ -119,10 +123,19 @@ func (a *App) shadowView() shadowView {
 	for _, r := range rows {
 		v.Rows = append(v.Rows, r.text)
 	}
-	if s.Enabled {
-		v.Buttons[0] = "OFF"
-	} else {
+	a.mu.Lock()
+	armed := time.Since(a.offArmed) < offArmFor
+	a.mu.Unlock()
+	switch {
+	case !s.Enabled:
 		v.Buttons[0] = "ON"
+	case armed:
+		v.Buttons[0] = "OFF: SURE?"
+		if v.Status == "" {
+			v.Status = "press again to switch the session off and drop every peer"
+		}
+	default:
+		v.Buttons[0] = "OFF"
 	}
 	if len(rows) > 0 {
 		switch r := rows[cur]; r.kind {
@@ -184,8 +197,19 @@ func (a *App) shadowPress(cc, value int) {
 		a.cursor = cur
 		a.mu.Unlock()
 	case push3.CCScreenBot1:
-		on := !s.Enabled
-		a.SetSession(nil, nil, &on)
+		// OFF drops every peer, so it takes two presses: the first arms it
+		// for a few seconds, the second does it.
+		a.mu.Lock()
+		armed := time.Since(a.offArmed) < offArmFor
+		a.offArmed = time.Time{}
+		if s.Enabled && !armed {
+			a.offArmed = time.Now()
+		}
+		a.mu.Unlock()
+		if !s.Enabled || armed {
+			on := !s.Enabled
+			a.SetSession(nil, nil, &on)
+		}
 	case push3.CCScreenBot2:
 		if cur < 0 {
 			return

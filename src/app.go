@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/federico-pepe/ableton-push-hack/core/sse"
@@ -77,17 +78,18 @@ type App struct {
 	cfgPath string
 	broker  *sse.Broker[State]
 
-	mu      sync.Mutex
-	cfg     Config
-	tr      *rtpmidi.Transport
-	av      *Avahi
-	br      *Bridge
-	found   map[string]Found
-	monitor []MonLine
-	errText string
-	dirty   bool
-	cursor  int // the Shadow tab's
-	done    chan struct{}
+	mu       sync.Mutex
+	cfg      Config
+	tr       *rtpmidi.Transport
+	av       *Avahi
+	br       *Bridge
+	found    map[string]Found
+	monitor  []MonLine
+	errText  string
+	dirty    atomic.Bool
+	cursor   int       // the Shadow tab's
+	offArmed time.Time // when OFF was pressed once on the tab
+	done     chan struct{}
 }
 
 func newApp(cfgPath, version string) *App {
@@ -124,7 +126,10 @@ func (a *App) Start() {
 func (a *App) Stop() {
 	close(a.done)
 	a.mu.Lock()
-	a.down()
+	old := a.down()
+	a.mu.Unlock()
+	closeSession(old)
+	a.mu.Lock()
 	if a.av != nil {
 		a.av.Close()
 	}
@@ -162,14 +167,22 @@ func (a *App) up() {
 	}
 }
 
-// down ends the session. Caller holds a.mu.
-func (a *App) down() {
+// down takes the session out of the app and withdraws its announcement.
+// Caller holds a.mu, and closes what comes back after letting it go:
+// Close says bye to every peer, and their disconnect events come straight
+// back into the app.
+func (a *App) down() *rtpmidi.Transport {
 	if a.av != nil {
 		a.av.Unpublish()
 	}
-	if a.tr != nil {
-		a.tr.Close()
-		a.tr = nil
+	tr := a.tr
+	a.tr = nil
+	return tr
+}
+
+func closeSession(tr *rtpmidi.Transport) {
+	if tr != nil {
+		tr.Close()
 		log.Printf("session: closed")
 	}
 }
@@ -242,16 +255,13 @@ func (a *App) monitorLine(dir, via string, msg []byte) {
 	if len(a.monitor) > monitorKeep {
 		a.monitor = a.monitor[len(a.monitor)-monitorKeep:]
 	}
-	a.dirty = true
 	a.mu.Unlock()
+	a.touch()
 }
 
-// touch marks the state changed; loop sends it to the page soon.
-func (a *App) touch() {
-	a.mu.Lock()
-	a.dirty = true
-	a.mu.Unlock()
-}
+// touch marks the state changed; loop sends it to the page soon. It takes
+// no lock: the transport reports events from inside calls made under a.mu.
+func (a *App) touch() { a.dirty.Store(true) }
 
 // loop sends changed state to the page, and invites remembered peers that
 // are not connected.
@@ -265,11 +275,7 @@ func (a *App) loop() {
 		case <-a.done:
 			return
 		case <-send.C:
-			a.mu.Lock()
-			dirty := a.dirty
-			a.dirty = false
-			a.mu.Unlock()
-			if dirty {
+			if a.dirty.Swap(false) {
 				a.broker.Broadcast(a.State())
 			}
 		case <-remember.C:
@@ -323,7 +329,8 @@ func (a *App) invite(host string, port int) {
 // SetSession changes name, port or on/off; nil leaves a field as it is.
 func (a *App) SetSession(name *string, port *int, enabled *bool) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
+	var old *rtpmidi.Transport
+	defer func() { a.mu.Unlock(); closeSession(old) }()
 	restart := false
 	if name != nil {
 		n := strings.TrimSpace(*name)
@@ -344,12 +351,16 @@ func (a *App) SetSession(name *string, port *int, enabled *bool) error {
 		a.cfg.Enabled = *enabled
 	}
 	if restart || !a.cfg.Enabled {
-		a.down()
+		old = a.down()
 	}
-	if a.cfg.Enabled {
+	if a.cfg.Enabled && a.tr == nil {
+		// A port change needs the old sockets gone first: close now,
+		// before the lock goes, since nobody else can see it any more.
+		closeSession(old)
+		old = nil
 		a.up()
 	}
-	a.dirty = true
+	a.touch()
 	return a.save()
 }
 
@@ -405,7 +416,7 @@ func (a *App) Forget(host string, port int) error {
 		}
 	}
 	a.cfg.Peers = keep
-	a.dirty = true
+	a.touch()
 	return a.save()
 }
 
@@ -420,7 +431,7 @@ func (a *App) SetRoutes(rs []Route) error {
 	a.cfg.Routes = rs
 	br := a.br
 	err := a.save()
-	a.dirty = true
+	a.touch()
 	a.mu.Unlock()
 	if br != nil {
 		br.SetRoutes(rs)
