@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-26
+
 ### Added
 
 - Net MIDI 0.1.0: the Push's MIDI as Apple MIDI (RTP-MIDI) on the network.
