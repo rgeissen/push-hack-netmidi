@@ -44,7 +44,8 @@ func (k EventKind) String() string {
 type Event struct {
 	Kind     EventKind
 	Peer     Peer
-	Messages [][]byte // EvMIDI only
+	Messages [][]byte    // EvMIDI only
+	At       []time.Time // when each message is due, by our clock; nil before the clocks are synced
 }
 
 // PeerState is where a peer's session stands.
@@ -76,11 +77,16 @@ type Peer struct {
 	LastSeen  time.Time
 	Latency   time.Duration // one way, from the last clock sync
 	Offset    int64         // its clock minus ours, 100 us units
+	Synced    bool          // a clock sync has completed
 	In, Out   uint64        // messages
+	Packets   uint64        // data packets from it
+	Lost      uint64        // packets the sequence numbers say never came
 
 	tries     int       // invites sent so far
 	lastSent  time.Time // the last invite
 	lastClock time.Time // the last CK0 we sent (initiator)
+	lastSeq   uint16
+	haveSeq   bool
 	parser    ListParser
 }
 
@@ -327,10 +333,12 @@ func (e *Endpoint) receiveClock(from netip.AddrPort, m Clock, now time.Time) ([]
 		m.Count, m.SSRC, m.TS[2] = 2, e.SSRC, t
 		p.Latency = time.Duration(t-m.TS[0]) * 100 * time.Microsecond / 2
 		p.Offset = int64(m.TS[1]) - int64(m.TS[0]+t)/2
+		p.Synced = true
 		return []Out{{PortData, from, m.Marshal()}}, nil
 	case 2:
 		p.Latency = time.Duration(m.TS[2]-m.TS[0]) * 100 * time.Microsecond / 2
 		p.Offset = int64(m.TS[0]+m.TS[2])/2 - int64(m.TS[1])
+		p.Synced = true
 	}
 	return nil, nil
 }
@@ -345,7 +353,17 @@ func (e *Endpoint) receiveData(from netip.AddrPort, b []byte, now time.Time) ([]
 	}
 	p.LastSeen = now
 	d, err := ParseData(b, &p.parser)
-	if err != nil || len(d.Messages) == 0 {
+	if err != nil {
+		return nil, nil
+	}
+	p.Packets++
+	if p.haveSeq {
+		if gap := d.Seq - p.lastSeq; gap > 1 && gap < 0x8000 {
+			p.Lost += uint64(gap - 1)
+		}
+	}
+	p.lastSeq, p.haveSeq = d.Seq, true
+	if len(d.Messages) == 0 {
 		return nil, nil
 	}
 	msgs := make([][]byte, len(d.Messages))
@@ -353,7 +371,33 @@ func (e *Endpoint) receiveData(from netip.AddrPort, b []byte, now time.Time) ([]
 		msgs[i] = m.Bytes
 	}
 	p.In += uint64(len(msgs))
-	return nil, []Event{{Kind: EvMIDI, Peer: *p, Messages: msgs}}
+	ev := Event{Kind: EvMIDI, Peer: *p, Messages: msgs}
+	if p.Synced {
+		ev.At = e.times(p, d, now)
+	}
+	return nil, []Event{ev}
+}
+
+// times says when each message of a packet is due by our clock: the
+// packet's stamp (the low 32 bits of the sender's clock, taken as the
+// turn nearest its clock now), moved by the offset the clock sync
+// measured, plus the delta times inside the packet.
+func (e *Endpoint) times(p *Peer, d Data, now time.Time) []time.Time {
+	remoteNow := int64(e.Clock(now)) + p.Offset
+	rt := remoteNow&^0xFFFFFFFF | int64(d.Timestamp)
+	if rt-remoteNow > 1<<31 {
+		rt -= 1 << 32
+	} else if remoteNow-rt > 1<<31 {
+		rt += 1 << 32
+	}
+	base := e.epoch.Add(time.Duration(rt-p.Offset) * 100 * time.Microsecond)
+	at := make([]time.Time, len(d.Messages))
+	var acc time.Duration
+	for i, m := range d.Messages {
+		acc += time.Duration(m.Delta) * 100 * time.Microsecond
+		at[i] = base.Add(acc)
+	}
+	return at
 }
 
 // Tick runs the timers: invites again, syncs clocks, drops silent peers.

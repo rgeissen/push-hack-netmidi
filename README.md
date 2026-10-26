@@ -46,8 +46,11 @@ Session 1** as a MIDI input or output.
 For the Push to connect by itself, the iPad must allow connections from
 anyone (in midimittr: "Who may connect: Anyone").
 
-Over Wi-Fi expect a few milliseconds of jitter. For tempo, use Ableton
-Link (AUM and Live on the Push both have it), not MIDI clock. Live sends
+Messages from the iPad carry the time they were sent, and the Push plays
+them at that time plus a **buffer** (10 ms by default; the web page sets
+it). The buffer absorbs Wi-Fi's jitter: raise it if notes stutter or the
+page counts many late packets, lower it on a wired link. For tempo, use
+Ableton Link (AUM and Live on the Push both have it), not MIDI clock. Live sends
 clock to Net MIDI only with **Sync** on for that port (Settings, MIDI).
 
 ## On the Push
@@ -99,6 +102,13 @@ Bonjour goes through `avahi-daemon`, which the Push runs already, over its
 D-Bus API (`godbus/dbus`, pure Go): the hack asks the daemon to announce
 `_apple-midi._udp` and to browse for it. The service points at
 `push.local`, which avahi owns.
+
+Messages from the network are not played as the packets land. Each one
+is due at the sender's stamp, moved by the offset the clock sync
+measures, plus the delta times inside the packet, plus the buffer; a
+scheduler (`sched.go`) holds it until then. A packet that is already
+late goes out at once with its inner spacing kept. The page counts late
+packets and the packets the sequence numbers say were lost.
 
 The ALSA side is `core/alsaseq`: one port that reads and writes, plus a
 subscription for each "out" route. A read's events go out in one packet,

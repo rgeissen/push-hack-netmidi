@@ -39,7 +39,7 @@ func TestSessionOffWithPeerDoesNotDeadlock(t *testing.T) {
 
 	done := make(chan error, 1)
 	off := false
-	go func() { done <- a.SetSession(nil, nil, &off) }()
+	go func() { done <- a.SetSession(nil, nil, nil, &off) }()
 	select {
 	case err := <-done:
 		if err != nil {
@@ -52,7 +52,7 @@ func TestSessionOffWithPeerDoesNotDeadlock(t *testing.T) {
 		t.Fatalf("after off: %+v", s)
 	}
 	on := true
-	if err := a.SetSession(nil, nil, &on); err != nil {
+	if err := a.SetSession(nil, nil, nil, &on); err != nil {
 		t.Fatal(err)
 	}
 	if s := a.State(); !s.Enabled || a.tr == nil {

@@ -208,7 +208,7 @@ func (a *App) shadowPress(cc, value int) {
 		a.mu.Unlock()
 		if !s.Enabled || armed {
 			on := !s.Enabled
-			a.SetSession(nil, nil, &on)
+			a.SetSession(nil, nil, nil, &on)
 		}
 	case push3.CCScreenBot2:
 		if cur < 0 {

@@ -30,15 +30,16 @@ type Remembered struct {
 
 // Config is the whole settings file.
 type Config struct {
-	Name    string       `json:"name"`    // the Bonjour name
-	Port    int          `json:"port"`    // the control port; data is port + 1
-	Enabled bool         `json:"enabled"` // the session is up and announced
-	Peers   []Remembered `json:"peers"`
-	Routes  []Route      `json:"routes"`
+	Name      string       `json:"name"`       // the Bonjour name
+	Port      int          `json:"port"`       // the control port; data is port + 1
+	Enabled   bool         `json:"enabled"`    // the session is up and announced
+	LatencyMs int          `json:"latency_ms"` // messages from the network wait this long past their time
+	Peers     []Remembered `json:"peers"`
+	Routes    []Route      `json:"routes"`
 }
 
 func defaultConfig() Config {
-	return Config{Name: "Push 3", Port: 5004, Enabled: true}
+	return Config{Name: "Push 3", Port: 5004, Enabled: true, LatencyMs: 10}
 }
 
 func loadConfig(path string) (Config, error) {
@@ -58,6 +59,9 @@ func loadConfig(path string) (Config, error) {
 	}
 	if cfg.Port < 1024 || cfg.Port > 65534 || cfg.Port%2 != 0 {
 		cfg.Port = 5004
+	}
+	if cfg.LatencyMs < 0 || cfg.LatencyMs > 500 {
+		cfg.LatencyMs = 10
 	}
 	return cfg, nil
 }

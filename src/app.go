@@ -38,6 +38,9 @@ type PeerView struct {
 	LatencyMs float64   `json:"latency_ms"`
 	In        uint64    `json:"in"`
 	Out       uint64    `json:"out"`
+	Packets   uint64    `json:"packets"`
+	Lost      uint64    `json:"lost"`
+	Synced    bool      `json:"synced"`
 }
 
 // RouteView is a route with whether its port is there.
@@ -65,6 +68,9 @@ type State struct {
 	Error      string       `json:"error"`
 	Alsa       bool         `json:"alsa"` // the Net MIDI port is open
 	OwnPort    string       `json:"own_port"`
+	LatencyMs  int          `json:"latency_ms"` // the buffer messages from the network wait in
+	Late       uint64       `json:"late"`       // packets that came after their time plus the buffer
+	Pending    int          `json:"pending"`    // messages waiting for their time
 	Peers      []PeerView   `json:"peers"`
 	Found      []Found      `json:"found"`
 	Remembered []Remembered `json:"remembered"`
@@ -89,6 +95,8 @@ type App struct {
 	dirty    atomic.Bool
 	cursor   int       // the Shadow tab's
 	offArmed time.Time // when OFF was pressed once on the tab
+	sched    *sched
+	late     atomic.Uint64
 	done     chan struct{}
 }
 
@@ -97,8 +105,10 @@ func newApp(cfgPath, version string) *App {
 	if err != nil {
 		log.Printf("config: %v (defaults)", err)
 	}
-	return &App{version: version, cfgPath: cfgPath, cfg: cfg,
+	a := &App{version: version, cfgPath: cfgPath, cfg: cfg,
 		broker: sse.NewBroker[State](8, true), found: map[string]Found{}, done: make(chan struct{})}
+	a.sched = newSched(func(msg []byte) { a.fromNet([][]byte{msg}) })
+	return a
 }
 
 // Start brings up Bonjour and, if enabled, the session.
@@ -125,6 +135,7 @@ func (a *App) Start() {
 // Stop says bye to the peers and frees everything.
 func (a *App) Stop() {
 	close(a.done)
+	a.sched.close()
 	a.mu.Lock()
 	old := a.down()
 	a.mu.Unlock()
@@ -212,16 +223,43 @@ func (a *App) toNet(msgs [][]byte) {
 
 func (a *App) onEvent(ev rtpmidi.Event) {
 	if ev.Kind == rtpmidi.EvMIDI {
-		a.mu.Lock()
-		br := a.br
-		a.mu.Unlock()
-		if br != nil {
-			br.FromNet(ev.Messages)
-		}
+		a.schedule(ev)
 		return
 	}
 	log.Printf("peer %q at %s: %s", ev.Peer.Name, ev.Peer.Ctrl, ev.Kind)
 	a.touch()
+}
+
+// schedule holds a packet's messages until their time plus the buffer.
+// A packet that is already past that goes out now, with the delta times
+// between its messages kept. Before the clocks are synced there are no
+// times: the messages go out as they come.
+func (a *App) schedule(ev rtpmidi.Event) {
+	a.mu.Lock()
+	lat := time.Duration(a.cfg.LatencyMs) * time.Millisecond
+	a.mu.Unlock()
+	if ev.At == nil {
+		a.fromNet(ev.Messages)
+		return
+	}
+	now := time.Now()
+	var shift time.Duration
+	if first := ev.At[0].Add(lat); first.Before(now) {
+		shift = now.Sub(first)
+		a.late.Add(1)
+	}
+	for i, msg := range ev.Messages {
+		a.sched.add(ev.At[i].Add(lat+shift), msg)
+	}
+}
+
+func (a *App) fromNet(msgs [][]byte) {
+	a.mu.Lock()
+	br := a.br
+	a.mu.Unlock()
+	if br != nil {
+		br.FromNet(msgs)
+	}
 }
 
 // onFound keeps the peers Bonjour sees. A peer on two interfaces comes
@@ -326,8 +364,8 @@ func (a *App) invite(host string, port int) {
 	}
 }
 
-// SetSession changes name, port or on/off; nil leaves a field as it is.
-func (a *App) SetSession(name *string, port *int, enabled *bool) error {
+// SetSession changes name, port, buffer (ms) or on/off; nil leaves a field as it is.
+func (a *App) SetSession(name *string, port *int, latency *int, enabled *bool) error {
 	a.mu.Lock()
 	var old *rtpmidi.Transport
 	defer func() { a.mu.Unlock(); closeSession(old) }()
@@ -346,6 +384,12 @@ func (a *App) SetSession(name *string, port *int, enabled *bool) error {
 		}
 		restart = restart || *port != a.cfg.Port
 		a.cfg.Port = *port
+	}
+	if latency != nil {
+		if *latency < 0 || *latency > 500 {
+			return fmt.Errorf("the buffer is 0 to 500 ms")
+		}
+		a.cfg.LatencyMs = *latency
 	}
 	if enabled != nil {
 		a.cfg.Enabled = *enabled
@@ -487,7 +531,8 @@ func (a *App) State() State {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	s := State{Version: a.version, Name: a.cfg.Name, Port: a.cfg.Port, Enabled: a.cfg.Enabled,
-		Error: a.errText, Alsa: a.br != nil, OwnPort: ownPortName,
+		Error: a.errText, Alsa: a.br != nil, OwnPort: ownPortName, LatencyMs: a.cfg.LatencyMs,
+		Late: a.late.Load(), Pending: a.sched.pending(),
 		Remembered: append([]Remembered{}, a.cfg.Peers...), Monitor: append([]MonLine{}, a.monitor...)}
 	if a.av != nil {
 		s.Announced = a.av.Published()
@@ -497,7 +542,8 @@ func (a *App) State() State {
 		for _, p := range a.tr.Peers() {
 			s.Peers = append(s.Peers, PeerView{SSRC: p.SSRC, Name: p.Name, Addr: p.Ctrl.String(),
 				State: p.State.String(), Initiator: p.Initiator, Since: p.Since,
-				LatencyMs: float64(p.Latency.Microseconds()) / 1000, In: p.In, Out: p.Out})
+				LatencyMs: float64(p.Latency.Microseconds()) / 1000, In: p.In, Out: p.Out,
+				Packets: p.Packets, Lost: p.Lost, Synced: p.Synced})
 		}
 		sort.Slice(s.Peers, func(i, j int) bool { return s.Peers[i].Addr < s.Peers[j].Addr })
 	}

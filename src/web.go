@@ -39,12 +39,13 @@ func routes(a *App) http.Handler {
 		var body struct {
 			Name    *string `json:"name"`
 			Port    *int    `json:"port"`
+			Latency *int    `json:"latency_ms"`
 			Enabled *bool   `json:"enabled"`
 		}
 		if !decode(w, r, &body) {
 			return
 		}
-		if err := a.SetSession(body.Name, body.Port, body.Enabled); err != nil {
+		if err := a.SetSession(body.Name, body.Port, body.Latency, body.Enabled); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

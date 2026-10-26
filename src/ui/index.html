@@ -50,6 +50,7 @@
   <div class="row">
     <label>Name <input id="name" maxlength="63"></label>
     <label>UDP port <input id="port" type="number" min="1024" max="65534" step="2"></label>
+    <label>Buffer <input id="lat" type="number" min="0" max="500"> ms</label>
     <label class="sw"><input id="enabled" type="checkbox"> On</label>
     <button class="p" id="apply">Apply</button>
   </div>
@@ -59,7 +60,7 @@
 <section>
   <h2>Peers</h2>
   <table id="peers">
-    <thead><tr><th>Name</th><th>Address</th><th>State</th><th class="r">Latency</th><th class="r">In</th><th class="r">Out</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Address</th><th>State</th><th class="r">Latency</th><th class="r">In</th><th class="r">Out</th><th class="r">Packets</th><th class="r">Lost</th><th></th></tr></thead>
     <tbody></tbody>
   </table>
   <div class="dim" id="nopeers">No peer connected. On the iPad, turn its network session on and pick this Push in its directory, or connect from here.</div>
@@ -111,6 +112,7 @@
   <h2>On the iPad</h2>
   <p>iPadOS has Apple MIDI built in, but an app has to turn its <b>network session</b> on. AUM does not; a free app such as <b>midimittr</b> does (Network, Session: on). The Push then shows up in that app's directory under its name: tap it to connect. In AUM pick <b>Network Session 1</b> as a MIDI input or output.</p>
   <p>For the Push to connect by itself (Connect above), the iPad must allow connections from anyone (midimittr: "Who may connect: Anyone").</p>
+  <p>Messages from the iPad carry the time they were sent; the Push plays them at that time plus the <b>buffer</b>. 10 ms suits a good Wi-Fi; raise it if notes stutter or the page counts many late packets, lower it for a wired link.</p>
   <p>Over Wi-Fi expect a few milliseconds of jitter. Use Ableton Link for tempo, not MIDI clock. Live sends clock to Net MIDI only with <b>Sync</b> on for it in Settings, MIDI.</p>
 </section>
 </main>
@@ -119,7 +121,7 @@
   var S = null, ports = [];
   var $ = function (id) { return document.getElementById(id); };
   var editing = false;
-  ['name', 'port'].forEach(function (id) {
+  ['name', 'port', 'lat'].forEach(function (id) {
     $(id).addEventListener('focus', function () { editing = true; });
     $(id).addEventListener('blur', function () { editing = false; });
   });
@@ -138,9 +140,9 @@
     $('ver').textContent = 'v' + s.version + (s.host ? ' on ' + s.host : '');
     $('sess').textContent = s.enabled ? (s.announced ? 'on, announced as "' + s.announced + '"' : 'on, not announced') : 'off';
     $('sess').className = 'pill ' + (s.enabled ? 'on' : 'off');
-    if (!editing) { $('name').value = s.name; $('port').value = s.port; }
+    if (!editing) { $('name').value = s.name; $('port').value = s.port; $('lat').value = s.latency_ms; }
     $('enabled').checked = s.enabled;
-    $('sessinfo').textContent = s.error ? '' : 'Control port UDP ' + s.port + ', data port ' + (s.port + 1) + '. ' + (s.alsa ? 'MIDI port "' + s.own_port + '" is open.' : 'Waiting for the MIDI side (boot settle).');
+    $('sessinfo').textContent = s.error ? '' : 'Control port UDP ' + s.port + ', data port ' + (s.port + 1) + '. ' + (s.alsa ? 'MIDI port "' + s.own_port + '" is open. ' : 'Waiting for the MIDI side (boot settle). ') + 'Messages from the network wait ' + s.latency_ms + ' ms past their time; ' + s.late + ' packets came later than that' + (s.late > 50 ? ' (raise the buffer)' : '') + '.';
     if (s.error) $('errbar').textContent = s.error;
     $('ownport').textContent = s.own_port;
 
@@ -148,7 +150,7 @@
     (s.peers || []).forEach(function (p) {
       var tr = document.createElement('tr');
       tr.innerHTML = td(esc(p.name)) + td(esc(p.addr)) + td(p.state + (p.initiator ? ' (invited by us)' : '')) +
-        td(p.state === 'connected' ? p.latency_ms.toFixed(1) + ' ms' : '', 'r') + td(p.in, 'r') + td(p.out, 'r') +
+        td(p.state === 'connected' ? p.latency_ms.toFixed(1) + ' ms' + (p.synced ? '' : ' (no sync yet)') : '', 'r') + td(p.in, 'r') + td(p.out, 'r') + td(p.packets, 'r') + td(p.lost, 'r') +
         td('<button class="x" data-ssrc="' + p.ssrc + '">Drop</button>');
       tb.appendChild(tr);
     });
@@ -201,7 +203,7 @@
     else if (d.remove) { var rr = routesOf(); rr.splice(+d.remove, 1); post('api/routes', rr).catch(fail); }
   });
   $('apply').onclick = function () {
-    post('api/session', { name: $('name').value, port: Number($('port').value), enabled: $('enabled').checked }).catch(fail);
+    post('api/session', { name: $('name').value, port: Number($('port').value), latency_ms: Number($('lat').value), enabled: $('enabled').checked }).catch(fail);
   };
   $('enabled').onchange = function () { post('api/session', { enabled: $('enabled').checked }).catch(fail); };
   $('connect').onclick = function () {
