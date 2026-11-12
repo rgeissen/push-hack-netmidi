@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-12
+
+### Changed
+
+- core from its release `core/v0.5.6` instead of a commit on a fork: the `replace` in `src/go.mod` is gone
+  (`alsaseq.Client.Unsubscribe` is in core since `core/v0.5.1`). Nothing changes on the Push.
+
 ## [0.1.0] - 2026-10-26
 
 ### Added
